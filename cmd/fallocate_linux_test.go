@@ -1,3 +1,5 @@
+// +build linux
+
 /*
  * Minio Cloud Storage, (C) 2016 Minio, Inc.
  *
@@ -16,7 +18,12 @@
 
 package cmd
 
-import "errors"
+import "testing"
 
-// errFSDiskFormat - returned when given disk format is other than FS format.
-var errFSDiskFormat = errors.New("Disk is not in FS format")
+// Tests allocate.
+func TestFallocate(t *testing.T) {
+	err := Fallocate(0, 0, 0)
+	if err != nil {
+		t.Fatal("Unexpected error in fallocate for length 0:", err)
+	}
+}
