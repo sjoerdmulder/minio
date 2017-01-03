@@ -501,23 +501,28 @@ func (fs fsObjects) GetObject(bucket, object string, offset int64, length int64,
 
 // getObjectInfo - wrapper for reading object metadata and constructs ObjectInfo.
 func (fs fsObjects) getObjectInfo(bucket, object string) (ObjectInfo, error) {
+	fsMeta := fsMetaV1{}
+	fsMetaPath := pathJoin(fs.fsPath, minioMetaBucket, bucketMetaPrefix, bucket, object, fsMetaJSONFile)
+
+	// Read `fs.json` to perhaps contend with
+	// parallel Put() operations.
+	rlk, err := fs.rwPool.Open(fsMetaPath)
+	if err == nil {
+		// Read from fs metadata only if it exists.
+		defer fs.rwPool.Close(fsMetaPath)
+		if _, rerr := fsMeta.ReadFrom(io.NewSectionReader(rlk, 0, rlk.Size())); rerr != nil {
+			return ObjectInfo{}, toObjectErr(rerr, bucket, object)
+		}
+	}
+	// Ignore if `fs.json` is not available, this is true for pre-existing data.
+	if err != nil && err != errFileNotFound {
+		return ObjectInfo{}, toObjectErr(traceError(err), bucket, object)
+	}
+
 	// Stat the file to get file size.
 	fi, err := fsStatFile(pathJoin(fs.fsPath, bucket, object))
 	if err != nil {
 		return ObjectInfo{}, toObjectErr(traceError(err), bucket, object)
-	}
-
-	fsMeta := fsMetaV1{}
-	fsMetaPath := pathJoin(fs.fsPath, minioMetaBucket, bucketMetaPrefix, bucket, object, fsMetaJSONFile)
-
-	rlk, err := fs.rwPool.Open(fsMetaPath)
-	if err != nil {
-		return ObjectInfo{}, toObjectErr(traceError(err), bucket, object)
-	}
-	defer fs.rwPool.Close(fsMetaPath)
-
-	if _, err = fsMeta.ReadFrom(io.NewSectionReader(rlk, 0, rlk.Size())); err != nil {
-		return ObjectInfo{}, toObjectErr(err, bucket, object)
 	}
 
 	return fsMeta.ToObjectInfo(bucket, object, fi), nil

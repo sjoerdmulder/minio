@@ -268,15 +268,13 @@ func (fs fsObjects) newMultipartUpload(bucket string, object string, meta map[st
 	// Save additional metadata.
 	fsMeta.Meta = meta
 
-	// This lock needs to be held for any changes to the directory
-	// contents of ".minio.sys/multipart/bucket/object/"
-	objectMPartPathLock := globalNSMutex.NewNSLock(minioMetaMultipartBucket,
-		pathJoin(bucket, object))
-	objectMPartPathLock.Lock()
-	defer objectMPartPathLock.Unlock()
-
 	uploadID = mustGetUUID()
 	initiated := time.Now().UTC()
+
+	// Hold write lock as we are writing `fs.json`
+	postUploadIDLock := globalNSMutex.NewNSLock(minioMetaMultipartBucket, pathJoin(bucket, object, uploadID))
+	postUploadIDLock.Lock()
+	defer postUploadIDLock.Unlock()
 
 	// Add upload ID to uploads.json
 	uploadsPath := pathJoin(bucket, object, uploadsJSONFile)
@@ -463,7 +461,7 @@ func (fs fsObjects) PutObjectPart(bucket, object, uploadID string, partID int, s
 	}
 	defer metaFile.Close()
 
-	// Just check if the uploadID exists to not proceed further,  if it doesn't.
+	// Just check if the uploadID exists to not proceed further.
 	if !fs.isUploadIDExists(bucket, object, uploadID) {
 		return "", traceError(InvalidUploadID{UploadID: uploadID})
 	}
@@ -495,9 +493,10 @@ func (fs fsObjects) PutObjectPart(bucket, object, uploadID string, partID int, s
 	// Append the part in background.
 	errCh := fs.append(bucket, object, uploadID, fsMeta)
 	go func() {
-		// Also receive the error so that the appendParts go-routine does not block on send.
-		// But the error received is ignored as fs.PutObjectPart() would have already
-		// returned success to the client.
+		// Also receive the error so that the appendParts go-routine
+		// does not block on send. But the error received is ignored
+		// as fs.PutObjectPart() would have already returned success
+		// to the client.
 		<-errCh
 		partLock.Unlock()
 	}()
