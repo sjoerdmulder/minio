@@ -450,21 +450,19 @@ func serverMain(c *cli.Context) {
 	handler, err := configureServerHandler(srvConfig)
 	fatalIf(err, "Unable to configure one of server's RPC services.")
 
+	// Check if endpoints are part of distributed setup.
+	globalIsDistXL = isDistributedSetup(endpoints)
+
 	// Set nodes for dsync for distributed setup.
 	if globalIsDistXL {
 		fatalIf(initDsyncNodes(endpoints), "Unable to initialize distributed locking clients")
 	}
 
-	if globalIsDistXL {
-		// Initialize S3 Peers inter-node communication only in distributed setup.
-		initGlobalS3Peers(endpoints)
+	// Initialize S3 Peers inter-node communication only in distributed setup.
+	initGlobalS3Peers(endpoints)
 
-		// Initialize Admin Peers inter-node communication only in distributed setup.
-		initGlobalAdminPeers(endpoints)
-	}
-
-	// Check if endpoints are part of distributed setup.
-	globalIsDistXL = isDistributedSetup(endpoints)
+	// Initialize Admin Peers inter-node communication only in distributed setup.
+	initGlobalAdminPeers(endpoints)
 
 	// Initialize name space lock.
 	initNSLock(globalIsDistXL)
