@@ -782,10 +782,6 @@ func (s *posix) StatFile(volume, path string) (file FileInfo, err error) {
 		// Return all errors here.
 		return FileInfo{}, err
 	}
-	// If its a directory its not a regular file.
-	if st.Mode().IsDir() {
-		return FileInfo{}, errFileNotFound
-	}
 	return FileInfo{
 		Volume:  volume,
 		Name:    path,
@@ -909,12 +905,7 @@ func (s *posix) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) (err e
 		}
 	}
 
-	srcIsDir := strings.HasSuffix(srcPath, slashSeparator)
-	dstIsDir := strings.HasSuffix(dstPath, slashSeparator)
-	// Either src and dst have to be directories or files, else return error.
-	if !(srcIsDir && dstIsDir || !srcIsDir && !dstIsDir) {
-		return errFileAccessDenied
-	}
+
 	srcFilePath := slashpath.Join(srcVolumeDir, srcPath)
 	if err = checkPathLength(preparePath(srcFilePath)); err != nil {
 		return err
@@ -923,6 +914,19 @@ func (s *posix) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) (err e
 	if err = checkPathLength(preparePath(dstFilePath)); err != nil {
 		return err
 	}
+
+	srcIsDir := strings.HasSuffix(srcPath, slashSeparator)
+	dstIsDir := strings.HasSuffix(dstPath, slashSeparator)
+	srcFileStat, err := os.Stat(preparePath(srcFilePath))
+	// Temporary file is empty then orignal file is probally a directory that is created
+	if dstIsDir && err == nil && srcFileStat.Size() == 0 {
+		srcIsDir = true
+	}
+	// Either src and dst have to be directories or files, else return error.
+	if !(srcIsDir && dstIsDir || !srcIsDir && !dstIsDir) {
+		return errFileAccessDenied
+	}
+
 	if srcIsDir {
 		// If source is a directory we expect the destination to be non-existent always.
 		_, err = os.Stat(preparePath(dstFilePath))
@@ -933,6 +937,10 @@ func (s *posix) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) (err e
 			return err
 		}
 		// Destination does not exist, hence proceed with the rename.
+		if (dstIsDir) {
+			mkdirAll(dstFilePath, 0777)
+			return nil
+		}
 	}
 	// Creates all the parent directories, with mode 0777 mkdir honors system umask.
 	if err = mkdirAll(slashpath.Dir(dstFilePath), 0777); err != nil {

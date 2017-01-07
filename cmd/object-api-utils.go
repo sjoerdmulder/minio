@@ -83,9 +83,6 @@ func IsValidObjectName(object string) bool {
 	if len(object) == 0 {
 		return false
 	}
-	if strings.HasSuffix(object, slashSeparator) {
-		return false
-	}
 	if strings.HasPrefix(object, slashSeparator) {
 		return false
 	}
